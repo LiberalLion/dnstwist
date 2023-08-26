@@ -24,6 +24,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 '''
 
+
 __author__ = 'Marcin Ulikowski'
 __version__ = '20200707'
 __email__ = 'marcin@ulikowski.pl'
@@ -48,28 +49,21 @@ try:
 	MODULE_DNSPYTHON = True
 except ImportError:
 	MODULE_DNSPYTHON = False
-	pass
-
 try:
 	import GeoIP
 	MODULE_GEOIP = True
 except ImportError:
 	MODULE_GEOIP = False
-	pass
 else:
 	try:
 		_ = GeoIP.new(GeoIP.GEOIP_MEMORY_CACHE)
 	except Exception:
 		MODULE_GEOIP = False
-		pass
-
 try:
 	import whois
 	MODULE_WHOIS = True
 except ImportError:
 	MODULE_WHOIS = False
-	pass
-
 try:
 	import ssdeep
 	MODULE_SSDEEP = True
@@ -79,17 +73,12 @@ except ImportError:
 		MODULE_SSDEEP = True
 	except ImportError:
 		MODULE_SSDEEP = False
-		pass
-
 try:
 	import requests
 	requests.packages.urllib3.disable_warnings()
 	MODULE_REQUESTS = True
 except ImportError:
 	MODULE_REQUESTS = False
-	pass
-
-
 REQUEST_TIMEOUT_DNS = 2.5
 REQUEST_RETRIES_DNS = 2
 REQUEST_TIMEOUT_HTTP = 5
@@ -110,10 +99,7 @@ else:
 
 class UrlParser():
 	def __init__(self, url):
-		if '://' not in url:
-			self.url = 'http://' + url
-		else:
-			self.url = url
+		self.url = f'http://{url}' if '://' not in url else url
 		self.scheme = ''
 		self.authority = ''
 		self.domain = ''
@@ -135,9 +121,7 @@ class UrlParser():
 			''', re.MULTILINE | re.VERBOSE
 			)
 
-		m_uri = re_rfc3986_enhanced.match(self.url)
-
-		if m_uri:
+		if m_uri := re_rfc3986_enhanced.match(self.url):
 			if m_uri.group('scheme'):
 				if m_uri.group('scheme').startswith('http'):
 					self.scheme = m_uri.group('scheme')
@@ -162,7 +146,7 @@ class UrlParser():
 		return allowed.match(domain)
 
 	def full_uri(self):
-		return self.scheme + '://' + self.domain + self.path + self.query
+		return f'{self.scheme}://{self.domain}{self.path}{self.query}'
 
 
 class DomainFuzz():
@@ -195,11 +179,11 @@ class DomainFuzz():
 		try:
 			from tld import parse_tld
 		except ImportError:
-			ctld = ['org', 'com', 'net', 'gov', 'edu', 'co', 'mil', 'nom', 'ac', 'info', 'biz']
 			d = domain.rsplit('.', 3)
 			if len(d) == 2:
 				return '', d[0], d[1]
 			if len(d) > 2:
+				ctld = ['org', 'com', 'net', 'gov', 'edu', 'co', 'mil', 'nom', 'ac', 'info', 'biz']
 				if d[-2] in ctld:
 					return '.'.join(d[:-3]), d[-3], '.'.join(d[-2:])
 				else:
@@ -299,10 +283,9 @@ class DomainFuzz():
 		return list(result_1pass | result_2pass)
 
 	def __hyphenation(self):
-		result = []
-		for i in range(1, len(self.domain)):
-			result.append(self.domain[:i] + '-' + self.domain[i:])
-		return result
+		return [
+			f'{self.domain[:i]}-{self.domain[i:]}' for i in range(1, len(self.domain))
+		]
 
 	def __insertion(self):
 		result = []
@@ -310,24 +293,29 @@ class DomainFuzz():
 			for keys in self.keyboards:
 				if self.domain[i] in keys:
 					for c in keys[self.domain[i]]:
-						result.append(self.domain[:i] + c + self.domain[i] + self.domain[i+1:])
-						result.append(self.domain[:i] + self.domain[i] + c + self.domain[i+1:])
+						result.extend(
+							(
+								self.domain[:i] + c + self.domain[i] + self.domain[i + 1 :],
+								self.domain[:i] + self.domain[i] + c + self.domain[i + 1 :],
+							)
+						)
 		return list(set(result))
 
 	def __omission(self):
-		result = []
-		for i in range(0, len(self.domain)):
-			result.append(self.domain[:i] + self.domain[i+1:])
+		result = [
+			self.domain[:i] + self.domain[i + 1 :] for i in range(0, len(self.domain))
+		]
 		n = re.sub(r'(.)\1+', r'\1', self.domain)
 		if n not in result and n != self.domain:
 			result.append(n)
 		return list(set(result))
 
 	def __repetition(self):
-		result = []
-		for i in range(0, len(self.domain)):
-			if self.domain[i].isalpha():
-				result.append(self.domain[:i] + self.domain[i] + self.domain[i] + self.domain[i+1:])
+		result = [
+			self.domain[:i] + self.domain[i] + self.domain[i] + self.domain[i + 1 :]
+			for i in range(0, len(self.domain))
+			if self.domain[i].isalpha()
+		]
 		return list(set(result))
 
 	def __replacement(self):
@@ -335,46 +323,55 @@ class DomainFuzz():
 		for i in range(0, len(self.domain)):
 			for keys in self.keyboards:
 				if self.domain[i] in keys:
-					for c in keys[self.domain[i]]:
-						result.append(self.domain[:i] + c + self.domain[i+1:])
+					result.extend(
+						self.domain[:i] + c + self.domain[i + 1 :]
+						for c in keys[self.domain[i]]
+					)
 		return list(set(result))
 
 	def __subdomain(self):
-		result = []
-		for i in range(1, len(self.domain)-1):
-			if self.domain[i] not in ['-', '.'] and self.domain[i-1] not in ['-', '.']:
-				result.append(self.domain[:i] + '.' + self.domain[i:])
-		return result
+		return [
+			f'{self.domain[:i]}.{self.domain[i:]}'
+			for i in range(1, len(self.domain) - 1)
+			if self.domain[i] not in ['-', '.']
+			and self.domain[i - 1] not in ['-', '.']
+		]
 
 	def __transposition(self):
-		result = []
-		for i in range(0, len(self.domain)-1):
-			if self.domain[i+1] != self.domain[i]:
-				result.append(self.domain[:i] + self.domain[i+1] + self.domain[i] + self.domain[i+2:])
-		return result
+		return [
+			self.domain[:i]
+			+ self.domain[i + 1]
+			+ self.domain[i]
+			+ self.domain[i + 2 :]
+			for i in range(0, len(self.domain) - 1)
+			if self.domain[i + 1] != self.domain[i]
+		]
 
 	def __vowel_swap(self):
 		vowels = 'aeiou'
 		result = []
 		for i in range(0, len(self.domain)):
-			for vowel in vowels:
-				if self.domain[i] in vowels:
-					result.append(self.domain[:i] + vowel + self.domain[i+1:])
+			result.extend(
+				self.domain[:i] + vowel + self.domain[i + 1 :]
+				for vowel in vowels
+				if self.domain[i] in vowels
+			)
 		return list(set(result))
 
 	def __addition(self):
-		result = []
-		for i in range(97, 123):
-			result.append(self.domain + chr(i))
-		return result
+		return [self.domain + chr(i) for i in range(97, 123)]
 
 	def __dictionary(self):
 		result = []
 		for word in self.dictionary:
-			result.append(self.domain + '-' + word)
-			result.append(self.domain + word)
-			result.append(word + '-' + self.domain)
-			result.append(word + self.domain)
+			result.extend(
+				(
+					f'{self.domain}-{word}',
+					self.domain + word,
+					f'{word}-{self.domain}',
+					word + self.domain,
+				)
+			)
 		return list(set(result))
 
 	def __tld(self):
@@ -411,12 +408,19 @@ class DomainFuzz():
 		for tld in self.__tld():
 			self.domains.append({'fuzzer': 'tld-swap', 'domain-name': '.'.join(filter(None, [self.subdomain, self.domain, tld]))})
 		if '.' in self.tld:
-			self.domains.append({'fuzzer': 'various', 'domain-name': self.domain + '.' + self.tld.split('.')[-1]})
+			self.domains.append(
+				{
+					'fuzzer': 'various',
+					'domain-name': f'{self.domain}.' + self.tld.split('.')[-1],
+				}
+			)
 			self.domains.append({'fuzzer': 'various', 'domain-name': self.domain + self.tld})
 		if '.' not in self.tld:
 			self.domains.append({'fuzzer': 'various', 'domain-name': self.domain + self.tld + '.' + self.tld})
 		if self.tld != 'com' and '.' not in self.tld:
-			self.domains.append({'fuzzer': 'various', 'domain-name': self.domain + '-' + self.tld + '.com'})
+			self.domains.append(
+				{'fuzzer': 'various', 'domain-name': f'{self.domain}-{self.tld}.com'}
+			)
 		self.__filter_domains()
 
 
@@ -445,14 +449,16 @@ class DomainThread(threading.Thread):
 
 	def __debug(self, text):
 		if self.debug:
-			print(str(text), file=sys.stderr, flush=True)
+			print(text, file=sys.stderr, flush=True)
 
 	def __banner_http(self, ip, vhost):
 		try:
 			http = socket.socket()
 			http.settimeout(1)
 			http.connect((ip, 80))
-			http.send('HEAD / HTTP/1.1\r\nHost: {}\r\nUser-agent: {}\r\n\r\n'.format(vhost, self.useragent).encode())
+			http.send(
+				f'HEAD / HTTP/1.1\r\nHost: {vhost}\r\nUser-agent: {self.useragent}\r\n\r\n'.encode()
+			)
 			response = http.recv(1024).decode()
 			http.close()
 		except Exception:
@@ -474,13 +480,11 @@ class DomainThread(threading.Thread):
 			pass
 		else:
 			hello = response.splitlines()[0]
-			if hello.startswith('220'):
-				return hello[4:].strip()
-			return hello[:40]
+			return hello[4:].strip() if hello.startswith('220') else hello[:40]
 
 	def __mxcheck(self, mx, from_domain, to_domain):
-		from_addr = 'randombob' + str(randint(1, 9)) + '@' + from_domain
-		to_addr = 'randomalice' + str(randint(1, 9)) + '@' + to_domain
+		from_addr = f'randombob{str(randint(1, 9))}@{from_domain}'
+		to_addr = f'randomalice{str(randint(1, 9))}@{to_domain}'
 		try:
 			smtp = smtplib.SMTP(mx, 25, timeout=REQUEST_TIMEOUT_SMTP)
 			smtp.sendmail(from_addr, to_addr, 'And that\'s how the cookie crumbles')

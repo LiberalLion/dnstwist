@@ -82,16 +82,20 @@ class Session():
 
 	def csv(self):
 		csv = ['fuzzer,domain-name,dns-a,dns-aaaa,dns-ns,dns-mx,geoip-country']
-		for domain in self.domains():
-			csv.append(','.join([
-				domain.get('fuzzer'),
-				domain.get('domain-name').encode('idna').decode(),
-				domain.get('dns-a', [''])[0],
-				domain.get('dns-aaaa', [''])[0],
-				domain.get('dns-ns', [''])[0],
-				domain.get('dns-mx', [''])[0],
-				domain.get('geoip-country', '')
-				]))
+		csv.extend(
+			','.join(
+				[
+					domain.get('fuzzer'),
+					domain.get('domain-name').encode('idna').decode(),
+					domain.get('dns-a', [''])[0],
+					domain.get('dns-aaaa', [''])[0],
+					domain.get('dns-ns', [''])[0],
+					domain.get('dns-mx', [''])[0],
+					domain.get('geoip-country', ''),
+				]
+			)
+			for domain in self.domains()
+		)
 		return '\n'.join(csv)
 
 
